@@ -327,12 +327,12 @@ func TestCapellaBlock(t *testing.T) {
 
 	tx := block.ExecutionPayload.Transactions[0]
 	receipt, err := blockAnalyzer.cli.GetTransactionReceipt(tx, block.Slot, block.ExecutionPayload.BlockNumber, block.ExecutionPayload.Timestamp)
-	var parsedTx = types.Transaction{}
+	var parsedTx = &types.Transaction{}
 	if err := parsedTx.UnmarshalBinary(tx); err != nil {
 		t.Errorf("could not unmarshal transaction: %s", err)
 		return
 	}
-	transaction, err := spec.ParseTransactionFromReceipt(parsedTx, receipt, block.Slot, block.ExecutionPayload.BlockNumber, block.ExecutionPayload.Timestamp)
+	transaction, err := spec.ParseTransactionFromReceipt(parsedTx, receipt, block.Slot, block.ExecutionPayload.BlockNumber, block.ExecutionPayload.Timestamp, uint64(0))
 
 	if err != nil {
 		t.Errorf("could not retrieve transaction details: %s", err)
@@ -396,13 +396,13 @@ func TestBellatrixBlock(t *testing.T) {
 	tx := block.ExecutionPayload.Transactions[0]
 
 	receipt, err := blockAnalyzer.cli.GetTransactionReceipt(tx, block.Slot, block.ExecutionPayload.BlockNumber, block.ExecutionPayload.Timestamp)
-	var parsedTx = types.Transaction{}
+	var parsedTx = &types.Transaction{}
 	if err := parsedTx.UnmarshalBinary(tx); err != nil {
 		t.Errorf("could not unmarshal transaction: %s", err)
 		return
 	}
 
-	transaction, err := spec.ParseTransactionFromReceipt(parsedTx, receipt, block.Slot, block.ExecutionPayload.BlockNumber, block.ExecutionPayload.Timestamp)
+	transaction, err := spec.ParseTransactionFromReceipt(parsedTx, receipt, block.Slot, block.ExecutionPayload.BlockNumber, block.ExecutionPayload.Timestamp, uint64(0))
 
 	if err != nil {
 		t.Errorf("could not retrieve transaction details: %s", err)
@@ -558,13 +558,13 @@ func TestTransactionGasWhenELIsProvided(t *testing.T) {
 		t.Errorf("could not retrieve transaction receipt: %s", err)
 		return
 	}
-	var parsedTx = types.Transaction{}
+	var parsedTx = &types.Transaction{}
 	if err := parsedTx.UnmarshalBinary(tx); err != nil {
 		t.Errorf("could not unmarshal transaction: %s", err)
 		return
 	}
 
-	transaction, err := spec.ParseTransactionFromReceipt(parsedTx, receipt, block.Slot, block.ExecutionPayload.BlockNumber, block.ExecutionPayload.Timestamp)
+	transaction, err := spec.ParseTransactionFromReceipt(parsedTx, receipt, block.Slot, block.ExecutionPayload.BlockNumber, block.ExecutionPayload.Timestamp, uint64(0))
 
 	if err != nil {
 		t.Errorf("could not retrieve transaction details: %s", err)
@@ -598,13 +598,13 @@ func TestTransactionGasWhenELNotProvided(t *testing.T) {
 		t.Errorf("could not retrieve transaction receipt: %s", err)
 		return
 	}
-	var parsedTx = types.Transaction{}
+	var parsedTx = &types.Transaction{}
 	if err := parsedTx.UnmarshalBinary(tx); err != nil {
 		t.Errorf("could not unmarshal transaction: %s", err)
 		return
 	}
 
-	transaction, err := spec.ParseTransactionFromReceipt(parsedTx, receipt, block.Slot, block.ExecutionPayload.BlockNumber, block.ExecutionPayload.Timestamp)
+	transaction, err := spec.ParseTransactionFromReceipt(parsedTx, receipt, block.Slot, block.ExecutionPayload.BlockNumber, block.ExecutionPayload.Timestamp, uint64(0))
 
 	if err != nil {
 		t.Errorf("could not retrieve transaction details: %s", err)

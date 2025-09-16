@@ -18,6 +18,7 @@ var (
 				SUM(CASE WHEN (f_reward <= f_max_reward) THEN f_max_reward ELSE 0 END) as aggregated_max_rewards,
 				SUM(f_effective_balance) as aggregated_effective_balance,
 				COUNT(CASE WHEN f_in_sync_committee = TRUE THEN 1 ELSE null END) as count_sync_committee,
+				SUM(f_sync_committee_participations_included) as count_sync_committee_participations_included,
 				COUNT(CASE WHEN f_missing_source = TRUE THEN 1 ELSE null END) as count_missing_source,
 				COUNT(CASE WHEN f_missing_target = TRUE THEN 1 ELSE null END) as count_missing_target,
 				COUNT(CASE WHEN f_missing_head = TRUE THEN 1 ELSE null END) as count_missing_head,
@@ -28,10 +29,10 @@ var (
 				count(distinct(t_validator_rewards_summary.f_val_idx)) as number_active_vals,
 				count(CASE WHEN f_withdrawal_prefix = 2 THEN 1 ELSE null END) as number_compounding_vals,
 				AVG(f_inclusion_delay) as avg_inclusion_delay
-			FROM t_validator_rewards_summary
-			LEFT JOIN t_eth2_pubkeys 
+			FROM t_validator_rewards_summary final
+			LEFT JOIN t_eth2_pubkeys final
 				ON t_validator_rewards_summary.f_val_idx = t_eth2_pubkeys.f_val_idx
-			LEFT JOIN t_proposer_duties 
+			LEFT JOIN t_proposer_duties final
 				ON t_validator_rewards_summary.f_val_idx = t_proposer_duties.f_val_idx 
 				AND t_validator_rewards_summary.f_epoch = toUInt64(t_proposer_duties.f_proposer_slot/32)
 			WHERE f_epoch = $1 AND f_status = 1 AND f_pool_name != ''
