@@ -17,6 +17,7 @@ import (
 
 // This Wrapper is meant to include all common objects across Ethereum Hard Fork Specs
 type AgnosticBlock struct {
+	HardForkVersion       spec.DataVersion
 	Slot                  phase0.Slot
 	StateRoot             phase0.Root
 	Root                  phase0.Root
@@ -99,6 +100,8 @@ func GetCustomBlock(block spec.VersionedSignedBeaconBlock) (AgnosticBlock, error
 		return NewDenebBlock(block), nil
 	case spec.DataVersionElectra:
 		return NewElectraBlock(block), nil
+	case spec.DataVersionFulu:
+		return NewFuluBlock(block), nil
 	default:
 		return AgnosticBlock{}, fmt.Errorf("could not figure out the Beacon Block Fork Version: %s", block.Version)
 	}
@@ -117,6 +120,7 @@ func NewPhase0Block(block spec.VersionedSignedBeaconBlock) AgnosticBlock {
 	}
 
 	return AgnosticBlock{
+		HardForkVersion:   spec.DataVersionPhase0,
 		Slot:              block.Phase0.Message.Slot,
 		ParentRoot:        block.Phase0.Message.ParentRoot,
 		Root:              root,
@@ -159,6 +163,7 @@ func NewAltairBlock(block spec.VersionedSignedBeaconBlock) AgnosticBlock {
 		log.Fatalf("could not read root from block %d", block.Altair.Message.Slot)
 	}
 	return AgnosticBlock{
+		HardForkVersion:   spec.DataVersionAltair,
 		Slot:              block.Altair.Message.Slot,
 		Root:              root,
 		ParentRoot:        block.Altair.Message.ParentRoot,
@@ -201,6 +206,7 @@ func NewBellatrixBlock(block spec.VersionedSignedBeaconBlock) AgnosticBlock {
 		log.Fatalf("could not read root from block %d", block.Bellatrix.Message.Slot)
 	}
 	return AgnosticBlock{
+		HardForkVersion:   spec.DataVersionBellatrix,
 		Slot:              block.Bellatrix.Message.Slot,
 		Root:              root,
 		ParentRoot:        block.Bellatrix.Message.ParentRoot,
@@ -243,6 +249,7 @@ func NewCapellaBlock(block spec.VersionedSignedBeaconBlock) AgnosticBlock {
 		log.Fatalf("could not read root from block %d", block.Capella.Message.Slot)
 	}
 	return AgnosticBlock{
+		HardForkVersion:   spec.DataVersionCapella,
 		Slot:              block.Capella.Message.Slot,
 		Root:              root,
 		ParentRoot:        block.Capella.Message.ParentRoot,
@@ -286,6 +293,7 @@ func NewDenebBlock(block spec.VersionedSignedBeaconBlock) AgnosticBlock {
 		log.Fatalf("could not read root from block %d", block.Deneb.Message.Slot)
 	}
 	return AgnosticBlock{
+		HardForkVersion:   spec.DataVersionDeneb,
 		Slot:              block.Deneb.Message.Slot,
 		Root:              root,
 		ParentRoot:        block.Deneb.Message.ParentRoot,
@@ -329,6 +337,7 @@ func NewElectraBlock(block spec.VersionedSignedBeaconBlock) AgnosticBlock {
 		log.Fatalf("could not read root from block %d", block.Electra.Message.Slot)
 	}
 	return AgnosticBlock{
+		HardForkVersion:          spec.DataVersionElectra,
 		Slot:                     block.Electra.Message.Slot,
 		Root:                     root,
 		ParentRoot:               block.Electra.Message.ParentRoot,
@@ -361,5 +370,52 @@ func NewElectraBlock(block spec.VersionedSignedBeaconBlock) AgnosticBlock {
 		CompressionTime:       compressionMetrics.CompressionTime,
 		DecompressionTime:     compressionMetrics.DecompressionTime,
 		ExecutionRequests:     block.Electra.Message.Body.ExecutionRequests,
+	}
+}
+
+func NewFuluBlock(block spec.VersionedSignedBeaconBlock) AgnosticBlock {
+	// make the compression of the block
+	compressionMetrics, err := utils.CompressConsensusSignedBlock(block.Fulu)
+	if err != nil {
+		logrus.Errorf("unable to compress fulu block %d - %s", block.Fulu.Message.Slot, err.Error())
+	}
+	root, err := block.Root()
+	if err != nil {
+		log.Fatalf("could not read root from block %d", block.Fulu.Message.Slot)
+	}
+	return AgnosticBlock{
+		HardForkVersion:          spec.DataVersionFulu,
+		Slot:                     block.Fulu.Message.Slot,
+		Root:                     root,
+		ParentRoot:               block.Fulu.Message.ParentRoot,
+		ProposerIndex:            block.Fulu.Message.ProposerIndex,
+		Graffiti:                 block.Fulu.Message.Body.Graffiti,
+		Proposed:                 true,
+		Attestations:             nil,
+		ElectraAttestations:      block.Fulu.Message.Body.Attestations,
+		Deposits:                 block.Fulu.Message.Body.Deposits,
+		ProposerSlashings:        block.Fulu.Message.Body.ProposerSlashings,
+		AttesterSlashings:        nil,
+		ElectraAttesterSlashings: block.Fulu.Message.Body.AttesterSlashings,
+		VoluntaryExits:           block.Fulu.Message.Body.VoluntaryExits,
+		SyncAggregate:            block.Fulu.Message.Body.SyncAggregate,
+		ExecutionPayload: AgnosticExecutionPayload{
+			FeeRecipient:  block.Fulu.Message.Body.ExecutionPayload.FeeRecipient,
+			GasLimit:      block.Fulu.Message.Body.ExecutionPayload.GasLimit,
+			GasUsed:       block.Fulu.Message.Body.ExecutionPayload.GasUsed,
+			Timestamp:     block.Fulu.Message.Body.ExecutionPayload.Timestamp,
+			BaseFeePerGas: block.Fulu.Message.Body.ExecutionPayload.BaseFeePerGas.Uint64(),
+			BlockHash:     block.Fulu.Message.Body.ExecutionPayload.BlockHash,
+			Transactions:  block.Fulu.Message.Body.ExecutionPayload.Transactions,
+			BlockNumber:   block.Fulu.Message.Body.ExecutionPayload.BlockNumber,
+			Withdrawals:   block.Fulu.Message.Body.ExecutionPayload.Withdrawals,
+			PayloadSize:   uint32(0),
+		}, // snappy
+		BLSToExecutionChanges: block.Fulu.Message.Body.BLSToExecutionChanges,
+		SSZsize:               compressionMetrics.SSZsize,
+		SnappySize:            compressionMetrics.SnappySize,
+		CompressionTime:       compressionMetrics.CompressionTime,
+		DecompressionTime:     compressionMetrics.DecompressionTime,
+		ExecutionRequests:     block.Fulu.Message.Body.ExecutionRequests,
 	}
 }

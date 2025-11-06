@@ -55,18 +55,18 @@ func (s *ChainAnalyzer) ProcessStateTransitionMetrics(epoch phase0.Epoch) {
 	if !nextState.EmptyStateRoot() && !currentState.EmptyStateRoot() && !prevState.EmptyStateRoot() {
 		s.processEpochDuties(bundle)
 		s.processValLastStatus(bundle)
-
-		s.processPoolMetrics(bundle.GetMetricsBase().CurrentState.Epoch)
 		s.processEpochMetrics(bundle)
 		s.processBlockRewards(bundle) // block rewards depend on two previous epochs
 		if s.metrics.ValidatorRewards {
 			s.processEpochValRewards(bundle)
 		}
 		s.processSlashings(bundle)
+		s.storeDepositsProcessed(bundle) // we store deposits processed from electra + in the database
 		s.storeConsolidationRequests(bundle)
 		s.storeWithdrawalRequests(bundle)
 		s.storeDepositRequests(bundle)
 		s.storeConsoidationsProcessed(bundle)
+		s.processPoolMetrics(bundle.GetMetricsBase().PrevState.Epoch) // Calculated over prev state so we make sure that tables are filled
 	}
 
 	s.processerBook.FreePage(routineKey)
@@ -81,6 +81,18 @@ func (s *ChainAnalyzer) processSlashings(bundle metrics.StateMetrics) {
 	err := s.dbClient.PersistSlashings(slashings)
 	if err != nil {
 		log.Errorf("error persisting slashings: %s", err.Error())
+	}
+}
+
+// storeDepositsProcessed stores the deposits processed from electra + in the database
+func (s *ChainAnalyzer) storeDepositsProcessed(bundle metrics.StateMetrics) {
+	depositsProcessed := bundle.GetMetricsBase().NextState.DepositsProcessed
+	if len(depositsProcessed) == 0 {
+		return
+	}
+	err := s.dbClient.PersistDeposits(depositsProcessed)
+	if err != nil {
+		log.Errorf("error persisting deposits processed: %s", err.Error())
 	}
 }
 
@@ -225,18 +237,10 @@ func (s *ChainAnalyzer) processEpochValRewards(bundle metrics.StateMetrics) {
 	var insertValsObj []spec.ValidatorRewards
 	log.Debugf("persising validator metrics: epoch %d", bundle.GetMetricsBase().NextState.Epoch)
 	nextState := bundle.GetMetricsBase().NextState
+	prevState := bundle.GetMetricsBase().PrevState
 	// process each validator
 	for i, validator := range nextState.Validators {
 		valIdx := phase0.ValidatorIndex(i)
-		// Check validator status conditions
-		isActive := spec.IsActive(*validator, nextState.Epoch)
-		isSlashed := validator.Slashed
-		isExited := validator.ExitEpoch <= nextState.Epoch
-
-		// Only process validators that are active or slashed and not exited
-		if !isActive && (!isSlashed || isExited) {
-			continue
-		}
 
 		// get max reward at given epoch using the formulas
 		maxRewards, err := bundle.GetMaxReward(valIdx)
@@ -244,6 +248,16 @@ func (s *ChainAnalyzer) processEpochValRewards(bundle metrics.StateMetrics) {
 			log.Errorf("Error obtaining max reward: %s", err.Error())
 			continue
 		}
+
+		// Check validator status conditions
+		isActive := spec.IsActive(*validator, prevState.Epoch)
+		isSlashed := validator.Slashed
+		isExited := validator.ExitEpoch <= prevState.Epoch
+		// Only process validators that are active, or slashed and not exited, or in sync committee
+		if !isActive && (!isSlashed || isExited) && !maxRewards.InSyncCommittee {
+			continue
+		}
+
 		if s.rewardsAggregationEpochs > 1 {
 			// if validator is not in s.validatorsRewardsAggregations, we need to create it
 			if _, ok := s.validatorsRewardsAggregations[valIdx]; !ok {
@@ -293,7 +307,7 @@ func (s *ChainAnalyzer) processBlockRewards(bundle metrics.StateMetrics) {
 
 func (s *ChainAnalyzer) getSingleBlockRewards(
 	block spec.AgnosticBlock,
-	mevBids relay.RelayBidsPerSlot) db.BlockReward {
+	mevBids *relay.RelayBidsPerSlot) db.BlockReward {
 	slot := block.Slot
 	bids := mevBids.GetBidsAtSlot(slot)
 	clManualReward := block.ManualReward
