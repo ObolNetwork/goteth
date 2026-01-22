@@ -77,7 +77,8 @@ func (p AgnosticBlock) BlockGasFees() (uint64, uint64, error) {
 	}
 
 	// Max reasonable fee per transaction: 1000 ETH in Wei (sanity cap)
-	const maxReasonableTxFee uint64 = 1e21
+	// Note: 1e21 exceeds uint64 max, using 1e19 (~184 ETH) as practical cap
+	const maxReasonableTxFee uint64 = 10000000000000000000
 
 	for _, tx := range p.ExecutionPayload.AgnosticTransactions {
 		// Check for underflow: GasPrice < baseFee should not happen but protect against it
