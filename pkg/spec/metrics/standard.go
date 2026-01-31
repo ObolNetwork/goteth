@@ -29,7 +29,11 @@ type StateMetricsBase struct {
 }
 
 func (p StateMetricsBase) EpochReward(valIdx phase0.ValidatorIndex) int64 {
-	consolidatedAmount, ok := p.NextState.ConsolidatedAmounts[valIdx]
+	// FIX: Use CurrentState.ConsolidatedAmounts instead of NextState
+	// CurrentState contains consolidations that were processed at the START of CurrentState.Epoch
+	// These consolidations already affected NextState.Balances
+	// NextState.ConsolidatedAmounts contains consolidations for the NEXT epoch (not yet applied)
+	consolidatedAmount, ok := p.CurrentState.ConsolidatedAmounts[valIdx]
 	if !ok {
 		consolidatedAmount = 0
 	}

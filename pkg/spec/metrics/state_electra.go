@@ -47,6 +47,10 @@ func (p *ElectraMetrics) PreProcessBundle() {
 	if !p.baseMetrics.CurrentState.EmptyStateRoot() {
 		p.ProcessAttestations()
 		p.processPendingDeposits()
+		// FIX: Process consolidations for CurrentState as well
+		// CurrentState.ConsolidatedAmounts = consolidations processed at START of current epoch
+		// These are the consolidations that affected NextState.Balances
+		p.processPendingConsolidations(p.baseMetrics.CurrentState)
 		p.processPendingConsolidations(p.baseMetrics.NextState)
 		if !p.baseMetrics.PrevState.EmptyStateRoot() {
 			// block rewards
