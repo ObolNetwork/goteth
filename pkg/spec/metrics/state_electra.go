@@ -47,10 +47,12 @@ func (p *ElectraMetrics) PreProcessBundle() {
 	if !p.baseMetrics.CurrentState.EmptyStateRoot() {
 		p.ProcessAttestations()
 		p.processPendingDeposits()
-		// FIX: Process consolidations for CurrentState as well
-		// CurrentState.ConsolidatedAmounts = consolidations processed at START of current epoch
-		// These are the consolidations that affected NextState.Balances
-		p.processPendingConsolidations(p.baseMetrics.CurrentState)
+		// FIX: Process consolidations for correct reward calculation
+		// Clear ConsolidatedAmounts first (state objects are reused between iterations)
+		// Then identify consolidations processed at the START of NextState's epoch
+		// These affected NextState.Balances and must be subtracted from the reward
+		p.baseMetrics.CurrentState.ConsolidatedAmounts = make(map[phase0.ValidatorIndex]phase0.Gwei)
+		p.processConsolidationsForRewardCalculation(p.baseMetrics.CurrentState, p.baseMetrics.NextState)
 		p.processPendingConsolidations(p.baseMetrics.NextState)
 		if !p.baseMetrics.PrevState.EmptyStateRoot() {
 			// block rewards
@@ -615,6 +617,37 @@ func (p ElectraMetrics) processPendingConsolidations(s *spec.AgnosticState) {
 		s.ConsolidatedAmounts[pendingConsolidation.TargetIndex] += sourceEffectiveBalance
 		s.ConsolidationsProcessed = append(s.ConsolidationsProcessed, *consolidationProcessed)
 		s.ConsolidationsProcessedAmount += sourceEffectiveBalance
+	}
+}
+
+// processConsolidationsForRewardCalculation identifies consolidations processed at the START
+// of nextState's epoch. These affect nextState.Balances and must be subtracted from reward.
+// See: https://github.com/ethereum/consensus-specs/blob/dev/specs/electra/beacon-chain.md#new-process_pending_consolidations
+func (p ElectraMetrics) processConsolidationsForRewardCalculation(currentState *spec.AgnosticState, nextState *spec.AgnosticState) {
+	if currentState == nil || nextState == nil {
+		return
+	}
+
+	numProcessed := len(currentState.PendingConsolidations) - len(nextState.PendingConsolidations)
+	if numProcessed <= 0 {
+		return
+	}
+
+	nextEpoch := currentState.Epoch + 1
+
+	for i := 0; i < numProcessed && i < len(currentState.PendingConsolidations); i++ {
+		pendingConsolidation := currentState.PendingConsolidations[i]
+		sourceValidator := currentState.Validators[pendingConsolidation.SourceIndex]
+
+		if sourceValidator.Slashed {
+			continue
+		}
+		if sourceValidator.WithdrawableEpoch > phase0.Epoch(nextEpoch) {
+			break
+		}
+
+		sourceEffectiveBalance := min(currentState.Balances[pendingConsolidation.SourceIndex], sourceValidator.EffectiveBalance)
+		currentState.ConsolidatedAmounts[pendingConsolidation.TargetIndex] += sourceEffectiveBalance
 	}
 }
 
