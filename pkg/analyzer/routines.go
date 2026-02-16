@@ -72,6 +72,14 @@ func (s *ChainAnalyzer) runHead() {
 			// make the block query
 			log.Tracef("received new head signal: %d", event.HeadEvent.Slot)
 			s.dbClient.PersistHeadEvents([]db.HeadEvent{event})
+
+			// Cache the state root from the Head SSE event for epoch-boundary slots.
+			// This allows DownloadState to fetch the state by root instead of by slot,
+			// avoiding a race condition in Lighthouse v8.1.0+ where the Head event is
+			// emitted before canonical_head is updated.
+			lastSlotOfEpoch := (event.HeadEvent.Slot/spec.SlotsPerEpoch+1)*spec.SlotsPerEpoch - 1
+			s.setEpochBoundaryStateRoot(lastSlotOfEpoch, event.HeadEvent.State)
+
 			for nextSlotDownload <= event.HeadEvent.Slot {
 
 				if s.processerBook.NumFreePages() > 0 {
