@@ -39,10 +39,22 @@ func (s *ChainAnalyzer) DownloadState(slot phase0.Slot) {
 	var err error
 
 	// Try to use the cached state root from the Head SSE event (root-based lookup).
-	// This avoids the racy slot-based resolution in Lighthouse v8.1.0+.
+	// This avoids the racy slot-based resolution in Lighthouse v8.1.0+ where the
+	// Head event is emitted before canonical_head is updated.
+	// A short delay + retry is needed because the state may not be queryable yet
+	// at the moment the Head event fires.
 	if root, ok := s.takeEpochBoundaryStateRoot(slot); ok {
 		log.Debugf("using cached state root for slot %d", slot)
-		state, err = s.cli.RequestBeaconStateByRoot(slot, root)
+		for attempt := 0; attempt < 3; attempt++ {
+			if attempt > 0 {
+				time.Sleep(1 * time.Second)
+				log.Debugf("retrying state-by-root for slot %d (attempt %d)", slot, attempt+1)
+			}
+			state, err = s.cli.RequestBeaconStateByRoot(slot, root)
+			if err == nil {
+				break
+			}
+		}
 	} else {
 		state, err = s.cli.RequestBeaconState(slot)
 	}
