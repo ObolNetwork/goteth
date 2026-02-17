@@ -42,6 +42,14 @@ func (s *APIClient) RequestBeaconBlock(slot phase0.Slot) (*local_spec.AgnosticBl
 		})
 		if err != nil {
 			if response404(err.Error()) {
+				if attempts < s.maxRetries-1 {
+					// Retry on 404: with Lighthouse v8.1.0+ the Head SSE event can
+					// fire before the block is queryable via the API.
+					log.Debugf("block at slot %d not found, retrying (attempt %d)", slot, attempts+1)
+					time.Sleep(500 * time.Millisecond)
+					attempts += 1
+					continue
+				}
 				log.Infof("the beacon block at slot %d does not exist, missing block", slot)
 				return s.CreateMissingBlock(slot), nil
 			}

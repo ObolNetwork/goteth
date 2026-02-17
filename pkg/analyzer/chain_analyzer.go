@@ -53,6 +53,7 @@ type ChainAnalyzer struct {
 
 	downloadCache                 ChainCache // store the blocks and states downloaded
 	validatorsRewardsAggregations map[phase0.ValidatorIndex]*spec.ValidatorRewardsAggregation
+	epochBoundaryStateRoots       sync.Map   // slot -> phase0.Root, caches state roots from Head SSE events at epoch boundaries
 
 	initTime    time.Time
 	PromMetrics *prom_metrics.PrometheusMetrics // metrics to be stored to prometheus

@@ -3,6 +3,7 @@ package spec
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/attestantio/go-eth2-client/spec"
@@ -75,9 +76,38 @@ func (p AgnosticBlock) BlockGasFees() (uint64, uint64, error) {
 		return reward, burn, fmt.Errorf("cannot calculate block reward: no transactions appended")
 	}
 
+	// Max reasonable fee per transaction: 1000 ETH in Wei (sanity cap)
+	// Note: 1e21 exceeds uint64 max, using 1e19 (~184 ETH) as practical cap
+	const maxReasonableTxFee uint64 = 10000000000000000000
+
 	for _, tx := range p.ExecutionPayload.AgnosticTransactions {
+		// Check for underflow: GasPrice < baseFee should not happen but protect against it
+		if tx.GasPrice < baseFeePerGas {
+			logrus.Warnf("Slot %d: Transaction gas price (%d) < base fee (%d), skipping",
+				p.Slot, tx.GasPrice, baseFeePerGas)
+			continue
+		}
+
 		priorityFee := (tx.GasPrice - baseFeePerGas) * tx.Gas
 		baseFee := baseFeePerGas * uint64(tx.Gas)
+
+		// Sanity check: no single transaction should exceed 1000 ETH in fees
+		if priorityFee > maxReasonableTxFee {
+			logrus.Warnf("Slot %d: Priority fee %d exceeds max reasonable (%d), likely overflow or corrupted data, skipping",
+				p.Slot, priorityFee, maxReasonableTxFee)
+			continue
+		}
+
+		// Check for overflow before accumulation
+		if math.MaxUint64-reward < priorityFee {
+			logrus.Errorf("Slot %d: Overflow detected when accumulating priority fees", p.Slot)
+			return reward, burn, fmt.Errorf("fee accumulation overflow at slot %d", p.Slot)
+		}
+		if math.MaxUint64-burn < baseFee {
+			logrus.Errorf("Slot %d: Overflow detected when accumulating base fees", p.Slot)
+			return reward, burn, fmt.Errorf("burn accumulation overflow at slot %d", p.Slot)
+		}
+
 		reward += priorityFee
 		burn += baseFee
 	}
