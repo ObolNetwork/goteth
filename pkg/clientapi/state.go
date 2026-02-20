@@ -18,7 +18,18 @@ var (
 )
 
 func (s *APIClient) RequestBeaconState(slot phase0.Slot) (*local_spec.AgnosticState, error) {
+	return s.requestBeaconStateWithID(slot, fmt.Sprintf("%d", slot), phase0.Root{})
+}
 
+// RequestBeaconStateByRoot fetches the beacon state using the state root
+// instead of the slot number. This avoids the racy slot-based resolution
+// in Lighthouse v8.1.0+ where the Head SSE event is emitted before
+// canonical_head is updated.
+func (s *APIClient) RequestBeaconStateByRoot(slot phase0.Slot, root phase0.Root) (*local_spec.AgnosticState, error) {
+	return s.requestBeaconStateWithID(slot, fmt.Sprintf("%#x", root), root)
+}
+
+func (s *APIClient) requestBeaconStateWithID(slot phase0.Slot, stateID string, knownRoot phase0.Root) (*local_spec.AgnosticState, error) {
 	routineKey := fmt.Sprintf("%s%d", stateKeyTag, slot)
 	s.statesBook.Acquire(routineKey)
 	defer s.statesBook.FreePage(routineKey)
@@ -32,7 +43,7 @@ func (s *APIClient) RequestBeaconState(slot phase0.Slot) (*local_spec.AgnosticSt
 	for err != nil && attempts < s.maxRetries {
 
 		newState, err = s.Api.BeaconState(s.ctx, &api.BeaconStateOpts{
-			State: fmt.Sprintf("%d", slot),
+			State: stateID,
 		})
 
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -45,20 +56,22 @@ func (s *APIClient) RequestBeaconState(slot phase0.Slot) (*local_spec.AgnosticSt
 
 	}
 	if err != nil {
-		// close the channel (to tell other routines to stop processing and end)
 		return nil, fmt.Errorf("unable to retrieve Beacon State from the beacon node, closing requester routine. %s", err.Error())
 
 	}
 
-	log.Infof("state at slot %d downloaded in %f seconds", slot, time.Since(startTime).Seconds())
+	log.Infof("state at slot %d downloaded in %f seconds (id=%s)", slot, time.Since(startTime).Seconds(), stateID)
 	resultState, err := local_spec.GetCustomState(*newState.Data, s.NewEpochData(slot))
 	if err != nil {
-		// close the channel (to tell other routines to stop processing and end)
 		return nil, fmt.Errorf("unable to open beacon state, closing requester routine. %s", err.Error())
 	}
-	// We have used HashTreeRoot method to hash the downloaded state, but it does not work ok
-	// meantime, we use this
-	resultState.StateRoot = s.RequestStateRoot(slot)
+
+	var zeroRoot phase0.Root
+	if knownRoot != zeroRoot {
+		resultState.StateRoot = knownRoot
+	} else {
+		resultState.StateRoot = s.RequestStateRoot(slot)
+	}
 
 	return &resultState, nil
 }

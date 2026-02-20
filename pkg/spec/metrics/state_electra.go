@@ -47,6 +47,12 @@ func (p *ElectraMetrics) PreProcessBundle() {
 	if !p.baseMetrics.CurrentState.EmptyStateRoot() {
 		p.ProcessAttestations()
 		p.processPendingDeposits()
+		// FIX: Clear state maps before processing (state objects are reused between iterations)
+		p.baseMetrics.CurrentState.ConsolidatedAmounts = make(map[phase0.ValidatorIndex]phase0.Gwei)
+		p.baseMetrics.CurrentState.DepositedAmounts = make(map[phase0.ValidatorIndex]phase0.Gwei)
+		// Process consolidations and deposits that affect NextState.Balances
+		p.processConsolidationsForRewardCalculation(p.baseMetrics.CurrentState, p.baseMetrics.NextState)
+		p.processDepositsForRewardCalculation(p.baseMetrics.CurrentState, p.baseMetrics.NextState)
 		p.processPendingConsolidations(p.baseMetrics.NextState)
 		if !p.baseMetrics.PrevState.EmptyStateRoot() {
 			// block rewards
@@ -611,6 +617,109 @@ func (p ElectraMetrics) processPendingConsolidations(s *spec.AgnosticState) {
 		s.ConsolidatedAmounts[pendingConsolidation.TargetIndex] += sourceEffectiveBalance
 		s.ConsolidationsProcessed = append(s.ConsolidationsProcessed, *consolidationProcessed)
 		s.ConsolidationsProcessedAmount += sourceEffectiveBalance
+	}
+}
+
+// processConsolidationsForRewardCalculation identifies consolidations processed at the START
+// of nextState's epoch. These affect nextState.Balances and must be subtracted from reward.
+// See: https://github.com/ethereum/consensus-specs/blob/dev/specs/electra/beacon-chain.md#new-process_pending_consolidations
+func (p ElectraMetrics) processConsolidationsForRewardCalculation(currentState *spec.AgnosticState, nextState *spec.AgnosticState) {
+	if currentState == nil || nextState == nil {
+		return
+	}
+
+	numProcessed := len(currentState.PendingConsolidations) - len(nextState.PendingConsolidations)
+	if numProcessed <= 0 {
+		return
+	}
+
+	nextEpoch := currentState.Epoch + 1
+
+	for i := 0; i < numProcessed && i < len(currentState.PendingConsolidations); i++ {
+		pendingConsolidation := currentState.PendingConsolidations[i]
+		sourceValidator := currentState.Validators[pendingConsolidation.SourceIndex]
+
+		if sourceValidator.Slashed {
+			continue
+		}
+		if sourceValidator.WithdrawableEpoch > phase0.Epoch(nextEpoch) {
+			break
+		}
+
+		sourceEffectiveBalance := min(currentState.Balances[pendingConsolidation.SourceIndex], sourceValidator.EffectiveBalance)
+		currentState.ConsolidatedAmounts[pendingConsolidation.TargetIndex] += sourceEffectiveBalance
+	}
+}
+
+// processDepositsForRewardCalculation identifies deposits processed at the START of nextState's epoch.
+// Only EXTERNAL deposits (slot > 0) affect the reward calculation.
+// Internal deposits from queue_excess_active_balance (slot = GENESIS_SLOT = 0) are balance
+// restructuring, not new funds, and should NOT be subtracted from reward.
+// See: https://ethereum.github.io/consensus-specs/specs/electra/beacon-chain/#new-process_pending_deposits
+func (p ElectraMetrics) processDepositsForRewardCalculation(currentState *spec.AgnosticState, nextState *spec.AgnosticState) {
+	if currentState == nil || nextState == nil {
+		return
+	}
+
+	numProcessed := len(currentState.PendingDeposits) - len(nextState.PendingDeposits)
+	if numProcessed <= 0 {
+		return
+	}
+
+	validatorPubkeys := make(map[[48]byte]phase0.ValidatorIndex)
+	for i, v := range currentState.Validators {
+		validatorPubkeys[v.PublicKey] = phase0.ValidatorIndex(i)
+	}
+
+	nextEpoch := currentState.Epoch + 1
+	finalizedSlot := spec.ComputeStartSlotAtEpoch(currentState.CurrentFinalizedCheckpoint.Epoch)
+	availableForProcessing := currentState.DepositBalanceToConsume + phase0.Gwei(getActivationExitChurnLimit(currentState))
+	processedAmount := phase0.Gwei(0)
+	depositIndex := 0
+
+	for _, deposit := range currentState.PendingDeposits {
+		if depositIndex >= numProcessed {
+			break
+		}
+
+		// Skip internal deposits (slot = GENESIS_SLOT = 0)
+		// These are created by queue_excess_active_balance and represent balance restructuring,
+		// not new external funds entering the validator's balance
+		if deposit.Slot == 0 {
+			depositIndex++
+			continue
+		}
+
+		if currentState.Eth1DepositIndex < currentState.DepositRequestsStartIndex {
+			break
+		}
+		if deposit.Slot > finalizedSlot {
+			break
+		}
+
+		validatorIdx, exists := validatorPubkeys[deposit.Pubkey]
+		if !exists {
+			depositIndex++
+			continue
+		}
+
+		validator := currentState.Validators[validatorIdx]
+		isValidatorExited := validator.ExitEpoch < phase0.Epoch(spec.FarFutureEpoch)
+		isValidatorWithdrawn := validator.WithdrawableEpoch < nextEpoch
+
+		if isValidatorExited && !isValidatorWithdrawn {
+			continue
+		}
+
+		if !isValidatorWithdrawn {
+			if processedAmount+deposit.Amount > availableForProcessing {
+				break
+			}
+			processedAmount += deposit.Amount
+		}
+
+		currentState.DepositedAmounts[validatorIdx] += deposit.Amount
+		depositIndex++
 	}
 }
 

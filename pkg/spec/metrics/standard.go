@@ -29,6 +29,7 @@ type StateMetricsBase struct {
 }
 
 func (p StateMetricsBase) EpochReward(valIdx phase0.ValidatorIndex) int64 {
+	// Consolidations processed at START of NextState's epoch (affecting NextState.Balances)
 	consolidatedAmount, ok := p.CurrentState.ConsolidatedAmounts[valIdx]
 	if !ok {
 		consolidatedAmount = 0
@@ -39,7 +40,9 @@ func (p StateMetricsBase) EpochReward(valIdx phase0.ValidatorIndex) int64 {
 	if !ok {
 		depositedAmount = 0
 	}
-	depositedAmount += p.NextState.Deposits[valIdx]
+	if int(valIdx) < len(p.NextState.Deposits) {
+		depositedAmount += p.NextState.Deposits[valIdx]
+	}
 	if valIdx < phase0.ValidatorIndex(len(p.CurrentState.Balances)) && valIdx < phase0.ValidatorIndex(len(p.NextState.Balances)) {
 		reward := int64(p.NextState.Balances[valIdx]) - int64(p.CurrentState.Balances[valIdx])
 		reward += int64(p.NextState.Withdrawals[valIdx])
