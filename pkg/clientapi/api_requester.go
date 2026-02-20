@@ -28,6 +28,7 @@ type APIClient struct {
 	ctx            context.Context
 	Api            *http.Service     // Beacon Node
 	ELApi          *ethclient.Client // Execution Node
+	bnEndpoint     string
 	Metrics        db.DBMetrics
 	maxRetries     int
 	statesBook     *utils.RoutineBook // Book to track what is being downloaded through the CL API: states
@@ -89,6 +90,7 @@ func NewAPIClient(ctx context.Context, bnEndpoint string, bnApiKey string, cfAcc
 	}
 
 	apiService.Api = hc
+	apiService.bnEndpoint = bnEndpoint
 	apiService.maxRetries = maxRequestRetries
 	for _, o := range options {
 		err := o(apiService)
