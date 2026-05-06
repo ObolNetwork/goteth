@@ -23,20 +23,28 @@ func (s *APIClient) RequestBlockRewards(slot phase0.Slot) (spec.BlockRewards, er
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Fatalln(err)
+		return spec.BlockRewards{}, fmt.Errorf("block rewards request failed for slot %d: %w", slot, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalln(err)
+		return spec.BlockRewards{}, fmt.Errorf("block rewards read body failed for slot %d: %w", slot, err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return spec.BlockRewards{}, fmt.Errorf("block rewards API returned status %d for slot %d: %s", resp.StatusCode, slot, string(body))
 	}
 
 	var rewards spec.BlockRewards
 	err = json.Unmarshal(body, &rewards)
 	if err != nil {
-		log.Fatalf("error parsing block rewards response: %s", err)
+		return spec.BlockRewards{}, fmt.Errorf("block rewards parse failed for slot %d: %w", slot, err)
 	}
 
-	return rewards, err
+	if rewards.Data.Total == 0 && rewards.Data.Attestations == 0 && rewards.Data.SyncAggregate == 0 {
+		return spec.BlockRewards{}, fmt.Errorf("block rewards response has all zero fields for slot %d, likely invalid", slot)
+	}
+
+	return rewards, nil
 }
