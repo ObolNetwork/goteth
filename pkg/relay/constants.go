@@ -8,9 +8,7 @@ const (
 	mainnetTitanGlobalRelay        string = "https://0x8c4ed5e24fe5c6ae21018437bde147693f68cda427cd1122cf20819c30eda7ed74f72dece09bb313f2a1855595ab677d@global.titanrelay.xyz"
 	mainnetTitanRegionalRelay      string = "https://0x8c4ed5e24fe5c6ae21018437bde147693f68cda427cd1122cf20819c30eda7ed74f72dece09bb313f2a1855595ab677d@regional.titanrelay.xyz"
 	mainnetFlashbotsRelay          string = "https://0xac6e77dfe25ecd6110b8e780608cce0dab71fdd5ebea22a16c0205200f2f8e2e3ad3b71d3499c54ad14d6c21b41a37ae@boost-relay.flashbots.net"
-	mainnetManifoldRelay           string = "https://0x98650451ba02064f7b000f5768cf0cf4d4e492317d82871bdc87ef841a0743f69f0f1eea11168503240ac35d101c9135@mainnet-relay.securerpc.com"
 	mainnetUltraSoundRelay         string = "https://0xa1559ace749633b997cb3fdacffb890aeebdb0f5a3b6aaa7eeeaf1a38af0a8fe88b9e4b1f61f236d2e64d95733327a62@relay.ultrasound.money"
-	mainnetWenmergeRelay           string = "https://0x8c7d33605ecef85403f8b7289c8058f440cbb6bf72b055dfe2f3e2c6695b6a1ea5a9cd0eb3a7982927a463feb4c3dae2@relay.wenmerge.com"
 )
 
 var mainnetRelayList []string = []string{
@@ -21,9 +19,7 @@ var mainnetRelayList []string = []string{
 	mainnetTitanGlobalRelay,
 	mainnetTitanRegionalRelay,
 	mainnetFlashbotsRelay,
-	mainnetManifoldRelay,
 	mainnetUltraSoundRelay,
-	mainnetWenmergeRelay,
 }
 
 const (

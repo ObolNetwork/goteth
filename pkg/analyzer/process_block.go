@@ -20,8 +20,13 @@ func (s *ChainAnalyzer) ProcessBlock(slot phase0.Slot) {
 	routineKey := fmt.Sprintf("%s%d", slotProcesserTag, slot)
 	s.processerBook.Acquire(routineKey) // register a new slot to process, good for monitoring
 
-	block := s.downloadCache.BlockHistory.Wait(SlotTo[uint64](slot))
-	err := s.dbClient.PersistBlocks([]spec.AgnosticBlock{*block})
+	block, err := s.downloadCache.BlockHistory.Wait(s.ctx, SlotTo[uint64](slot))
+	if err != nil {
+		s.processerBook.FreePage(routineKey)
+		log.Errorf("context cancelled waiting for block at slot %d: %s", slot, err)
+		return
+	}
+	err = s.dbClient.PersistBlocks([]spec.AgnosticBlock{*block})
 	if err != nil {
 		log.Errorf("error persisting blocks: %s", err.Error())
 	}
@@ -175,6 +180,36 @@ func (s *ChainAnalyzer) processTransactions(block *spec.AgnosticBlock, receipts 
 		log.Errorf("error persisting transactions: %s", err.Error())
 	}
 	return err
+}
+
+// recoverBlockReceipts retries fetching EL receipts for blocks where
+// ProcessETH1Data failed to populate AgnosticTransactions.
+// Called from processBlockRewards as a second chance before fee calculation.
+// See https://github.com/migalabs/goteth/issues/251
+func (s *ChainAnalyzer) recoverBlockReceipts(block *spec.AgnosticBlock) {
+	if len(block.ExecutionPayload.AgnosticTransactions) > 0 {
+		return // already populated
+	}
+	if len(block.ExecutionPayload.Transactions) == 0 {
+		return // no transactions in block
+	}
+	if !s.metrics.Transactions {
+		return // transactions metric not enabled
+	}
+
+	log.Warnf("slot %d: retrying receipt fetch for block reward calculation", block.Slot)
+	receipts, err := s.cli.GetBlockReceipts(*block)
+	if err != nil {
+		log.Errorf("slot %d: receipt recovery failed: %s", block.Slot, err)
+		return
+	}
+	txs, err := spec.ParseTransactionsFromBlock(*block, receipts)
+	if err != nil {
+		log.Errorf("slot %d: transaction parse failed during recovery: %s", block.Slot, err)
+		return
+	}
+	block.ExecutionPayload.AgnosticTransactions = txs
+	log.Infof("slot %d: recovered %d transaction receipts for fee calculation", block.Slot, len(txs))
 }
 
 func (s *ChainAnalyzer) processBlobSidecars(block *spec.AgnosticBlock, txs []spec.AgnosticTransaction) {

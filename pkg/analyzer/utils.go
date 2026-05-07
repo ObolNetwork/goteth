@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -10,12 +11,9 @@ import (
 )
 
 const (
-	ValidatorSetSize           = 500000                 // Estimation of current number of validators, used for channel length declaration
-	maxWorkers                 = 50                     // maximum number of workers allowed in the tool
-	minBlockReqTime            = 100 * time.Millisecond // max 10 queries per second, dont spam beacon node
-	minStateReqTime            = 1 * time.Second        // max 1 query per second, dont spam beacon node
-	epochsToFinalizedTentative = 3                      // usually, 2 full epochs before the head it is finalized
-	dataWaitInterval           = 1 * time.Minute        // wait for block or epoch to be in the cache
+	ValidatorSetSize           = 500000          // Estimation of current number of validators, used for channel length declaration
+	epochsToFinalizedTentative = 4               // 4 epochs back to cover epoch_metrics/pool_summary offset on restart
+	dataWaitInterval           = 1 * time.Minute // wait for block or epoch to be in the cache
 )
 
 var (
@@ -99,17 +97,18 @@ func (m *AgnosticMap[T]) Set(key uint64, value *T) {
 	delete(m.subs, key)
 }
 
-func (m *AgnosticMap[T]) Wait(key uint64) *T {
+func (m *AgnosticMap[T]) Wait(ctx context.Context, key uint64) (*T, error) {
 	m.Lock()
 	// Unlock cannot be deferred so we can unblock Set() while waiting
 
 	value, ok := m.m[key]
 	if ok {
 		m.Unlock()
-		return value
+		return value, nil
 	}
 
 	ticker := time.NewTicker(dataWaitInterval)
+	defer ticker.Stop()
 
 	// if there is no value yet, subscribe to any new values for this key
 	ch := make(chan *T)
@@ -118,11 +117,14 @@ func (m *AgnosticMap[T]) Wait(key uint64) *T {
 
 	for {
 		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+
 		case <-ticker.C:
 			log.Warnf("Waiting for %T %d...", *new(T), key)
 
 		case item := <-ch:
-			return item
+			return item, nil
 		}
 	}
 }

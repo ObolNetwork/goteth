@@ -58,7 +58,8 @@ type AgnosticState struct {
 	ConsolidationsProcessed       []ConsolidationProcessed
 	ConsolidationsProcessedAmount phase0.Gwei                           // total amount of Gwei consolidated
 	NewExitingValidators          []phase0.ValidatorIndex               // list of validators that are exiting due to consolidation/withdrawal requests, used for tracking errors of a validator trying to consolidate/withdraw twice on same epoch.
-	ConsolidatedAmounts           map[phase0.ValidatorIndex]phase0.Gwei // map of validator index to consolidated amount
+	ConsolidatedAmounts           map[phase0.ValidatorIndex]phase0.Gwei // map of validator index to consolidated amount (target receives)
+	ConsolidatedOutAmounts        map[phase0.ValidatorIndex]phase0.Gwei // map of validator index to outgoing consolidated amount (source sends)
 	PendingDeposits               []*electra.PendingDeposit
 	DepositsProcessed             []Deposit
 	DepositedAmounts              map[phase0.ValidatorIndex]phase0.Gwei // map of validator index to deposited amount (used for Electra Fork)
@@ -116,6 +117,7 @@ func (p *AgnosticState) Setup() error {
 	p.ConsolidationsProcessed = make([]ConsolidationProcessed, 0)
 	p.NewExitingValidators = make([]phase0.ValidatorIndex, 0)
 	p.ConsolidatedAmounts = make(map[phase0.ValidatorIndex]phase0.Gwei)
+	p.ConsolidatedOutAmounts = make(map[phase0.ValidatorIndex]phase0.Gwei)
 	p.DepositedAmounts = make(map[phase0.ValidatorIndex]phase0.Gwei)
 	return nil
 }
@@ -126,6 +128,21 @@ func (p *AgnosticState) AddBlocks(blockList []*AgnosticBlock) {
 	p.CalculateDeposits()
 	p.CalculateNumAttestations()
 	p.CalculateSyncParticipation()
+}
+
+// RefreshBlocks replaces the state's block list and recalculates all derived
+// fields. Unlike AddBlocks, it resets the accumulators first so that calling
+// it on a state whose blocks were already set does not double-count values.
+// This is needed after chain reorganisations where block objects in the cache
+// have been replaced but states still hold pointers to the old blocks.
+func (p *AgnosticState) RefreshBlocks(blockList []*AgnosticBlock) {
+	p.WithdrawalsNum = 0
+	p.TotalWithdrawalsAmount = 0
+	p.DepositsNum = 0
+	p.TotalDepositsAmount = 0
+	p.NumAttestations = 0
+	p.SyncCommitteeParticipation = 0
+	p.AddBlocks(blockList)
 }
 
 func (p *AgnosticState) CalculateSyncParticipation() {

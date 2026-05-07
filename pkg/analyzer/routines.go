@@ -50,8 +50,25 @@ func (s *ChainAnalyzer) runHead() {
 	log.Info("launching head routine")
 	nextSlotDownload := s.fillToHead()
 
-	s.downloadCache.BlockHistory.Wait(SlotTo[uint64](nextSlotDownload))
-	// do not continue until fill is done
+	// Wait for blocks that may still be in-flight. During historical
+	// processing, CleanUpTo evicts blocks older than 5 epochs, so only
+	// blocks within the last 5 epochs can still be pending. Waiting from
+	// initSlot would deadlock on evicted blocks (#253), and skipping via
+	// Available() would miss in-flight downloads (#248).
+	waitFrom := nextSlotDownload
+	if nextSlotDownload > 5*spec.SlotsPerEpoch {
+		waitFrom = nextSlotDownload - 5*spec.SlotsPerEpoch
+	}
+	if waitFrom < s.initSlot {
+		waitFrom = s.initSlot
+	}
+	log.Infof("waiting for remaining historical blocks (%d to %d) to complete...", waitFrom, nextSlotDownload)
+	for slot := waitFrom; slot <= nextSlotDownload; slot++ {
+		if _, err := s.downloadCache.BlockHistory.Wait(s.ctx, SlotTo[uint64](slot)); err != nil {
+			log.Errorf("context cancelled waiting for block at slot %d: %s", slot, err)
+			return
+		}
+	}
 
 	log.Infof("Switch to head mode: following chain head")
 
@@ -78,7 +95,9 @@ func (s *ChainAnalyzer) runHead() {
 			// avoiding a race condition in Lighthouse v8.1.0+ where the Head event is
 			// emitted before canonical_head is updated.
 			lastSlotOfEpoch := (event.HeadEvent.Slot/spec.SlotsPerEpoch+1)*spec.SlotsPerEpoch - 1
-			s.setEpochBoundaryStateRoot(lastSlotOfEpoch, event.HeadEvent.State)
+			if event.HeadEvent.Slot == lastSlotOfEpoch {
+				s.setEpochBoundaryStateRoot(lastSlotOfEpoch, event.HeadEvent.State)
+			}
 
 			for nextSlotDownload <= event.HeadEvent.Slot {
 
@@ -195,8 +214,13 @@ func (s *ChainAnalyzer) runHistorical(init phase0.Slot, end phase0.Slot) {
 			}
 		}
 
-		s.downloadTaskChan <- i
-		i += 1
+		select {
+		case s.downloadTaskChan <- i:
+			i += 1
+		case <-s.ctx.Done():
+			log.Info("context cancelled, stopping historical download")
+			return
+		}
 
 	}
 	log.Infof("historical mode: all download tasks sent")
