@@ -3,6 +3,7 @@ package analyzer
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"strings"
 	"testing"
 
@@ -661,7 +662,7 @@ func TestBlockGasFees(t *testing.T) {
 		return
 	}
 
-	assert.Equal(t, reward, uint64(44861896127679906))
-	assert.Equal(t, burn, uint64(317246355753369564))
+	assert.Equal(t, reward, new(big.Int).SetUint64(44861896127679906))
+	assert.Equal(t, burn, new(big.Int).SetUint64(317246355753369564))
 
 }

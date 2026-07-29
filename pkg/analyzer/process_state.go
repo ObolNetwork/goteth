@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/migalabs/goteth/pkg/db"
@@ -382,9 +383,9 @@ func (s *ChainAnalyzer) getSingleBlockRewards(
 	var err error
 
 	// obtain
-	burntFees := uint64(0)
-	rewardFees := uint64(0)
-	bidCommision := uint64(0)
+	rewardFees := new(big.Int)
+	burntFees := new(big.Int)
+	bidCommission := new(big.Int)
 	relayAddresses := make([]string, 0)
 	builderPubkeys := make([]string, 0)
 
@@ -401,7 +402,9 @@ func (s *ChainAnalyzer) getSingleBlockRewards(
 			bidBlockHash := bid.BlockHash
 
 			if blockHash == bidBlockHash {
-				bidCommision = bid.Value.Uint64()
+				if bid.Value != nil {
+					bidCommission = new(big.Int).Set(bid.Value)
+				}
 				relayAddresses = append(relayAddresses, address)
 				builderPubkeys = append(builderPubkeys, bid.BuilderPubkey.String())
 			}
@@ -414,7 +417,7 @@ func (s *ChainAnalyzer) getSingleBlockRewards(
 		RewardFees:     rewardFees,
 		BurntFees:      burntFees,
 		Relays:         relayAddresses,
-		BidCommision:   bidCommision,
+		BidCommission:   bidCommission,
 		BuilderPubkeys: builderPubkeys,
 	}
 }
