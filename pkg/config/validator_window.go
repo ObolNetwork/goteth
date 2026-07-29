@@ -5,24 +5,26 @@ import (
 )
 
 type ValidatorWindowConfig struct {
-	LogLevel          string `json:"log-level"`
-	DBUrl             string `json:"db-url"`
-	NumEpochs         int    `json:"num-epochs"`
-	BnEndpoint        string `json:"bn-endpoint"`
-	BnApiKey          string `json:"bn-api-key"`
-	MaxRequestRetries int    `json:"max-request-retries"`
+	LogLevel            string `json:"log-level"`
+	DBUrl               string `json:"db-url"`
+	NumEpochs           int    `json:"num-epochs"`
+	DeleteCadenceEpochs int    `json:"delete-cadence-epochs"`
+	BnEndpoint          string `json:"bn-endpoint"`
+	BnApiKey            string `json:"bn-api-key"`
+	MaxRequestRetries   int    `json:"max-request-retries"`
 }
 
 // TODO: read from config-file
 func NewValidatorWindowConfig() *ValidatorWindowConfig {
 	// Return Default values for the ethereum configuration
 	return &ValidatorWindowConfig{
-		LogLevel:          DefaultLogLevel,
-		DBUrl:             DefaultDBUrl,
-		NumEpochs:         DefaultValidatorWindowEpochs,
-		BnEndpoint:        DefaultBnEndpoint,
-		MaxRequestRetries: DefaultMaxRequestRetries,
-		BnApiKey:          DefaultBnApiKey,
+		LogLevel:            DefaultLogLevel,
+		DBUrl:               DefaultDBUrl,
+		NumEpochs:           DefaultValidatorWindowEpochs,
+		DeleteCadenceEpochs: DefaultValidatorWindowDeleteCadence,
+		BnEndpoint:          DefaultBnEndpoint,
+		MaxRequestRetries:   DefaultMaxRequestRetries,
+		BnApiKey:            DefaultBnApiKey,
 	}
 }
 
@@ -39,6 +41,10 @@ func (c *ValidatorWindowConfig) Apply(ctx *cli.Context) {
 	// validator window epochs
 	if ctx.IsSet("num-epochs") {
 		c.NumEpochs = ctx.Int("num-epochs")
+	}
+	// delete cadence (batch retention deletes every N epochs)
+	if ctx.IsSet("delete-cadence-epochs") {
+		c.DeleteCadenceEpochs = ctx.Int("delete-cadence-epochs")
 	}
 	// cl url
 	if ctx.IsSet("bn-endpoint") {
