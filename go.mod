@@ -2,6 +2,8 @@ module github.com/migalabs/goteth
 
 go 1.25
 
+toolchain go1.26.10
+
 require (
 	github.com/ClickHouse/ch-go v0.65.1
 	github.com/ClickHouse/clickhouse-go/v2 v2.32.1
