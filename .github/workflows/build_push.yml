@@ -7,6 +7,9 @@ on:
     tags:
       - 'v*'
 name: Build and Publish Docker Image
+# Read-only by default; only the jobs that push to ghcr.io get packages: write.
+permissions:
+  contents: read
 env:
   IMAGE: ghcr.io/obolnetwork/goteth
 jobs:
@@ -24,6 +27,9 @@ jobs:
             arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
     steps:
     - uses: actions/checkout@v3
       with:
@@ -72,6 +78,8 @@ jobs:
     needs: build-docker
     runs-on: ubuntu-24.04
     name: Merge Docker Manifests
+    permissions:
+      packages: write
     steps:
     - name: Download digests
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
