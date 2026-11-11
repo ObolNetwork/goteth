@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"os"
 	"strings"
 	"testing"
 
@@ -15,6 +16,47 @@ import (
 	"github.com/migalabs/goteth/pkg/spec/metrics"
 	"github.com/stretchr/testify/assert"
 )
+
+// These exercise the metrics against a live beacon node, and an execution node
+// for the ones that need transactions. The endpoints default to the local ones
+// a developer runs, and can be pointed elsewhere:
+//
+//	GOTETH_TEST_BN_ENDPOINT   beacon node,    default http://localhost:5052
+//	GOTETH_TEST_EL_ENDPOINT   execution node, default http://localhost:8545
+//
+// requireNodes skips when nothing answers there. They used to fail instead,
+// which meant `go test ./...` was red on any machine without a node running -
+// including CI, which is part of why this repository had none.
+func testBNEndpoint() string {
+	if endpoint := os.Getenv("GOTETH_TEST_BN_ENDPOINT"); endpoint != "" {
+		return endpoint
+	}
+	return "http://localhost:5052"
+}
+
+func testELEndpoint() string {
+	if endpoint := os.Getenv("GOTETH_TEST_EL_ENDPOINT"); endpoint != "" {
+		return endpoint
+	}
+	return "http://localhost:8545"
+}
+
+// requireNodes returns an analyzer, or skips the test when no beacon node is
+// reachable. Skipping rather than failing is the point: an absent node is a
+// missing prerequisite, not a defect, and a suite that cannot tell the two
+// apart is one nobody can run.
+// Returns a pointer: ChainAnalyzer holds an atomic.Bool, so handing back a
+// copy trips vet's copylocks check.
+func requireNodes(t *testing.T, build func() (ChainAnalyzer, error)) *ChainAnalyzer {
+	t.Helper()
+
+	analyzer, err := build()
+	if err != nil {
+		t.Skipf("no beacon node reachable at %s: %s (set GOTETH_TEST_BN_ENDPOINT to point elsewhere)",
+			testBNEndpoint(), err)
+	}
+	return &analyzer
+}
 
 func BuildChainAnalyzer() (ChainAnalyzer, error) {
 
@@ -31,12 +73,12 @@ func BuildChainAnalyzer() (ChainAnalyzer, error) {
 	// generate the httpAPI client
 	cli, err := clientapi.NewAPIClient(
 		ctx,
-		"http://localhost:5052",
+		testBNEndpoint(),
 		"",
 		"",
 		"",
 		maxRequestRetries,
-		clientapi.WithELEndpoint("http://localhost:8545"),
+		clientapi.WithELEndpoint(testELEndpoint()),
 		clientapi.WithDBMetrics(dbMetrics))
 	if err != nil {
 		return ChainAnalyzer{}, err
@@ -54,7 +96,7 @@ func BuildChainAnalyzerWithEL() (ChainAnalyzer, error) {
 	ctx := context.Background()
 	maxRequestRetries := 3
 	// generate the httpAPI client
-	cli, err := clientapi.NewAPIClient(ctx, "http://localhost:5052", "", "", "", maxRequestRetries, clientapi.WithELEndpoint("http://localhost:8545"))
+	cli, err := clientapi.NewAPIClient(ctx, testBNEndpoint(), "", "", "", maxRequestRetries, clientapi.WithELEndpoint(testELEndpoint()))
 	if err != nil {
 		return ChainAnalyzer{}, err
 	}
@@ -102,14 +144,10 @@ func BuildEpochTask(analyzer *ChainAnalyzer, slot phase0.Slot) (metrics.StateMet
 
 func TestPhase0Epoch(t *testing.T) {
 
-	analyzer, err := BuildChainAnalyzer()
-	if err != nil {
-		t.Errorf("could not build analyzer: %s", err)
-		return
-	}
+	analyzer := requireNodes(t, BuildChainAnalyzer)
 
 	// returns the state in a custom struct for Phase0, Altair of Bellatrix
-	stateMetrics, err := BuildEpochTask(&analyzer, 320031) // epoch 10000
+	stateMetrics, err := BuildEpochTask(analyzer, 320031) // epoch 10000
 	if err != nil {
 		t.Errorf("could not build epoch task: %s", err)
 		return
@@ -123,14 +161,10 @@ func TestPhase0Epoch(t *testing.T) {
 
 func TestAltairEpoch(t *testing.T) {
 
-	analyzer, err := BuildChainAnalyzer()
-	if err != nil {
-		t.Errorf("could not build analyzer: %s", err)
-		return
-	}
+	analyzer := requireNodes(t, BuildChainAnalyzer)
 
 	// returns the state in a custom struct for Phase0, Altair of Bellatrix
-	stateMetrics, err := BuildEpochTask(&analyzer, 2375711) // epoch 74240
+	stateMetrics, err := BuildEpochTask(analyzer, 2375711) // epoch 74240
 	if err != nil {
 		t.Errorf("could not build epoch task: %s", err)
 		return
@@ -150,14 +184,10 @@ func TestAltairEpoch(t *testing.T) {
 
 func TestAltairRewards(t *testing.T) {
 
-	analyzer, err := BuildChainAnalyzer()
-	if err != nil {
-		t.Errorf("could not build analyzer: %s", err)
-		return
-	}
+	analyzer := requireNodes(t, BuildChainAnalyzer)
 
 	// returns the state in a custom struct for Phase0, Altair of Bellatrix
-	stateMetrics, err := BuildEpochTask(&analyzer, 6565759) // epoch 205179
+	stateMetrics, err := BuildEpochTask(analyzer, 6565759) // epoch 205179
 	if err != nil {
 		t.Errorf("could not build epoch task: %s", err)
 		return
@@ -244,13 +274,9 @@ func TestAltairRewards(t *testing.T) {
 
 func TestAltairNegativeRewards(t *testing.T) {
 
-	analyzer, err := BuildChainAnalyzer()
-	if err != nil {
-		t.Errorf("could not build analyzer: %s", err)
-		return
-	}
+	analyzer := requireNodes(t, BuildChainAnalyzer)
 	// returns the state in a custom struct for Phase0, Altair of Bellatrix
-	stateMetrics, err := BuildEpochTask(&analyzer, 6565823) // epoch 205181
+	stateMetrics, err := BuildEpochTask(analyzer, 6565823) // epoch 205181
 	if err != nil {
 		t.Errorf("could not build epoch task: %s", err)
 		return
@@ -298,12 +324,7 @@ func TestAltairNegativeRewards(t *testing.T) {
 
 func TestCapellaBlock(t *testing.T) {
 
-	blockAnalyzer, err := BuildChainAnalyzerWithEL()
-
-	if err != nil {
-		t.Errorf("could not build analyzer: %s", err)
-		return
-	}
+	blockAnalyzer := requireNodes(t, BuildChainAnalyzerWithEL)
 
 	// Test regular case
 
@@ -366,12 +387,7 @@ func TestCapellaBlock(t *testing.T) {
 
 func TestBellatrixBlock(t *testing.T) {
 
-	blockAnalyzer, err := BuildChainAnalyzer()
-
-	if err != nil {
-		t.Errorf("could not build analyzer: %s", err)
-		return
-	}
+	blockAnalyzer := requireNodes(t, BuildChainAnalyzer)
 
 	// Test regular case
 
@@ -435,16 +451,11 @@ func TestBellatrixBlock(t *testing.T) {
 
 func TestAltairBlock(t *testing.T) {
 
-	blockAnalyzer, err := BuildChainAnalyzer()
-
-	if err != nil {
-		t.Errorf("could not build analyzer: %s", err)
-		return
-	}
+	blockAnalyzer := requireNodes(t, BuildChainAnalyzer)
 
 	// Test regular case
 
-	block, err := blockAnalyzer.cli.RequestBeaconBlock(4636687)
+	block, _ := blockAnalyzer.cli.RequestBeaconBlock(4636687)
 
 	assert.Equal(t, block.Proposed, true)
 
@@ -465,7 +476,7 @@ func TestAltairBlock(t *testing.T) {
 
 	// Test missed
 
-	block, err = blockAnalyzer.cli.RequestBeaconBlock(4709992)
+	block, _ = blockAnalyzer.cli.RequestBeaconBlock(4709992)
 
 	assert.Equal(t, block.Proposed, false)
 
@@ -487,16 +498,11 @@ func TestAltairBlock(t *testing.T) {
 
 func TestPhase0Block(t *testing.T) {
 
-	blockAnalyzer, err := BuildChainAnalyzer()
-
-	if err != nil {
-		t.Errorf("could not build analyzer: %s", err)
-		return
-	}
+	blockAnalyzer := requireNodes(t, BuildChainAnalyzer)
 
 	// Test regular case
 
-	block, err := blockAnalyzer.cli.RequestBeaconBlock(2372310)
+	block, _ := blockAnalyzer.cli.RequestBeaconBlock(2372310)
 
 	assert.Equal(t, block.Proposed, true)
 
@@ -517,7 +523,7 @@ func TestPhase0Block(t *testing.T) {
 
 	// Test missed
 
-	block, err = blockAnalyzer.cli.RequestBeaconBlock(2372309)
+	block, _ = blockAnalyzer.cli.RequestBeaconBlock(2372309)
 
 	assert.Equal(t, block.Proposed, false)
 
@@ -538,12 +544,7 @@ func TestPhase0Block(t *testing.T) {
 }
 
 func TestTransactionGasWhenELIsProvided(t *testing.T) {
-	blockAnalyzer, err := BuildChainAnalyzerWithEL()
-
-	if err != nil {
-		t.Errorf("could not build analyzer: %s", err)
-		return
-	}
+	blockAnalyzer := requireNodes(t, BuildChainAnalyzerWithEL)
 
 	// Test regular case
 	block, err := blockAnalyzer.cli.RequestBeaconBlock(8020631) //block number 18826815
@@ -578,12 +579,7 @@ func TestTransactionGasWhenELIsProvided(t *testing.T) {
 }
 
 func TestTransactionGasWhenELNotProvided(t *testing.T) {
-	blockAnalyzer, err := BuildChainAnalyzer()
-
-	if err != nil {
-		t.Errorf("could not build analyzer: %s", err)
-		return
-	}
+	blockAnalyzer := requireNodes(t, BuildChainAnalyzer)
 
 	// Test regular case
 	block, err := blockAnalyzer.cli.RequestBeaconBlock(8020631) //block number 18826815
@@ -618,24 +614,14 @@ func TestTransactionGasWhenELNotProvided(t *testing.T) {
 }
 
 func TestBlockSizeIsSetWhenELIsProvided(t *testing.T) {
-	blockAnalyzer, err := BuildChainAnalyzerWithEL()
-
-	if err != nil {
-		t.Errorf("could not build analyzer: %s", err)
-		return
-	}
+	blockAnalyzer := requireNodes(t, BuildChainAnalyzerWithEL)
 
 	block, _ := blockAnalyzer.cli.RequestBeaconBlock(5610381) //block number 16442285
 	assert.Equal(t, block.ExecutionPayload.PayloadSize, uint32(69157))
 }
 
 func TestBlockSizeNotSetWhenELNotProvided(t *testing.T) {
-	blockAnalyzer, err := BuildChainAnalyzer()
-
-	if err != nil {
-		t.Errorf("could not build analyzer: %s", err)
-		return
-	}
+	blockAnalyzer := requireNodes(t, BuildChainAnalyzer)
 
 	block, _ := blockAnalyzer.cli.RequestBeaconBlock(5610381) //block number 16442285
 	assert.Equal(t, block.ExecutionPayload.PayloadSize, uint32(0))
@@ -643,11 +629,7 @@ func TestBlockSizeNotSetWhenELNotProvided(t *testing.T) {
 
 func TestBlockGasFees(t *testing.T) {
 
-	analyzer, err := BuildChainAnalyzer()
-	if err != nil {
-		t.Errorf("could not build analyzer: %s", err)
-		return
-	}
+	analyzer := requireNodes(t, BuildChainAnalyzer)
 
 	block, err := analyzer.cli.RequestBeaconBlock(8790975)
 	if err != nil {
