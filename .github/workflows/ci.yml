@@ -5,6 +5,10 @@ on:
     branches: [main, master, dev]
   pull_request:
 
+# The job only reads the code: give its token read access, like build_push.yml.
+permissions:
+  contents: read
+
 # This repository had no CI at all. Every change to the indexer serving
 # mainnet merged without being compiled, vetted or tested by anything but
 # whoever wrote it.
